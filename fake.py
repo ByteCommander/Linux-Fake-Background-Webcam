@@ -15,6 +15,7 @@ import fnmatch
 import time
 import mediapipe as mp
 from cmapy import cmap
+from pathlib import Path
 
 
 class RealCam:
@@ -286,6 +287,25 @@ class FakeCam:
     def put_frame(self, frame):
         self.fake_cam.schedule_frame(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
+    def initial_consumer_count(self):
+        count = 0
+        own_pid = os.getpid()
+        for proc_path in Path("/proc").iterdir():
+            try:
+                pid = int(proc_path.name)  # throws ValueError on non-PID directories
+                if pid != own_pid:
+                    fd_path = proc_path / "fd"
+                    for fd in fd_path.iterdir():
+                        # throws PermissionError on other users' processes,
+                        # FileNotFoundError on terminated processes
+                        if str(fd.resolve()) == self.v4l2loopback_path:
+                            count += 1
+                            print(f"Found consumer '{proc_path / 'comm'}'")
+                            break
+            except (ValueError, PermissionError, FileNotFoundError):
+                pass
+        return count
+
     def run(self):
         self.load_images()
         t0 = time.monotonic()
@@ -297,7 +317,9 @@ class FakeCam:
         if self.ondemand:
             watch_flags = flags.CREATE | flags.OPEN | flags.CLOSE_NOWRITE | flags.CLOSE_WRITE
             wd = inotify.add_watch(self.v4l2loopback_path, watch_flags)
-            self.paused = True
+            self.consumers = self.initial_consumer_count()
+            self.paused = self.consumers == 0
+            print("Consumers:", self.consumers, "- starting", "paused" if self.paused else "active")
 
         while True:
             if self.ondemand:
