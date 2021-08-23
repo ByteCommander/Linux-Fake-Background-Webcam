@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 
-from inotify_simple import INotify, flags
+import argparse
+import fnmatch
 import itertools
+import os
 import signal
 import sys
-import argparse
+import time
 from functools import partial
+from pathlib import Path
 from typing import Any, Dict
+
 import cv2
+import mediapipe as mp
 import numpy as np
 import pyfakewebcam
-import os
-import fnmatch
-import time
-import mediapipe as mp
 from cmapy import cmap
-from pathlib import Path
+from inotify_simple import INotify, flags
 
 
 class RealCam:
@@ -99,8 +100,7 @@ class FakeCam:
         self.height = args.height
         self.fps = args.fps
         self.codec = args.codec
-        self.MRAR = getPercentageFloat(
-            args.background_mask_update_speed) # Mask Running Average Ratio
+        self.MRAR = getPercentageFloat(args.background_mask_update_speed)  # Mask Running Average Ratio
         self.use_sigmoid = args.use_sigmoid
         self.threshold = getPercentageFloat(args.threshold)
         self.postprocess = args.no_postprocess
@@ -153,7 +153,7 @@ class FakeCam:
 
     def load_images(self):
         self.images: Dict[str, Any] = {}
-        
+
         if not self.no_background:
             background = cv2.imread(
                 findFile(self.background_image, self.image_folder))
@@ -206,26 +206,22 @@ class FakeCam:
                         for i in range(self.bg_video_adv_rate):
                             frame = read_frame()
                         yield frame
+
                 background = next_frame()
 
             self.images["background"] = background
 
         if self.use_foreground and self.foreground_image is not None:
-            foreground = cv2.imread(
-                findFile(self.foreground_image, self.image_folder))
-            self.images["foreground"] = cv2.resize(foreground,
-                                                   (self.width, self.height))
-            foreground_mask = cv2.imread(
-                findFile(self.foreground_mask_image, self.image_folder))
+            foreground = cv2.imread(findFile(self.foreground_image, self.image_folder))
+            self.images["foreground"] = cv2.resize(foreground, (self.width, self.height))
+            foreground_mask = cv2.imread(findFile(self.foreground_mask_image, self.image_folder))
             foreground_mask = cv2.normalize(
                 foreground_mask, None, alpha=0, beta=1,
-                norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
-            foreground_mask = cv2.resize(foreground_mask,
-                                         (self.width, self.height))
-            self.images["foreground_mask"] = cv2.cvtColor(
-                foreground_mask, cv2.COLOR_BGR2GRAY)
-            self.images["inverted_foreground_mask"] = 1 - \
-                self.images["foreground_mask"]
+                norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F
+            )
+            foreground_mask = cv2.resize(foreground_mask, (self.width, self.height))
+            self.images["foreground_mask"] = cv2.cvtColor(foreground_mask, cv2.COLOR_BGR2GRAY)
+            self.images["inverted_foreground_mask"] = 1 - self.images["foreground_mask"]
 
     def compose_frame(self, frame):
         mask = self.classifier.process(frame).segmentation_mask
@@ -271,15 +267,15 @@ class FakeCam:
 
         for c in range(frame.shape[2]):
             frame[:, :, c] = frame[:, :, c] * mask + \
-                background_frame[:, :, c] * (1 - mask)
+                             background_frame[:, :, c] * (1 - mask)
 
         # Add foreground if needed
         if self.use_foreground and self.foreground_image is not None:
             for c in range(frame.shape[2]):
                 frame[:, :, c] = (
-                    frame[:, :, c] * self.images["inverted_foreground_mask"] +
-                    self.images["foreground"][:, :, c] *
-                    self.images["foreground_mask"]
+                        frame[:, :, c] * self.images["inverted_foreground_mask"] +
+                        self.images["foreground"][:, :, c] *
+                        self.images["foreground_mask"]
                 )
 
         return frame
@@ -340,11 +336,7 @@ class FakeCam:
 
             if not self.paused:
                 if self.real_cam is None:
-                    self.real_cam = RealCam(self.webcam_path,
-                                            self.width,
-                                            self.height,
-                                            self.fps,
-                                            self.codec)
+                    self.real_cam = RealCam(self.webcam_path, self.width, self.height, self.fps, self.codec)
                 frame = self.real_cam.read()
                 if frame is None:
                     time.sleep(0.1)
@@ -384,7 +376,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Faking your webcam background under \
                             GNU/Linux. Please refer to: \
                             https://github.com/fangfufu/Linux-Fake-Background-Webcam",
-                            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-W", "--width", default=1280, type=int,
                         help="Set real webcam width")
     parser.add_argument("-H", "--height", default=720, type=int,
@@ -516,8 +508,7 @@ def get_codec_args_from_string(codec):
 
 def _log_camera_property_not_set(prop, value):
     print("Cannot set camera property {} to {}. "
-          "Defaulting to auto-detected property set by opencv".format(prop,
-                                                                      value))
+          "Defaulting to auto-detected property set by opencv".format(prop, value))
 
 
 def main():
@@ -527,7 +518,7 @@ def main():
     signal.signal(signal.SIGQUIT, partial(sigquit_handler, cam))
     print("Running...")
     print("Please CTRL-C to pause and reload the background / foreground images")
-    print("Please CTRL-\ to exit")
+    print("Please CTRL-\\ to exit")
     # frames forever
     cam.run()
 
