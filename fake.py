@@ -152,61 +152,62 @@ class FakeCam:
 
     def load_images(self):
         self.images: Dict[str, Any] = {}
-
-        background = cv2.imread(
-            findFile(self.background_image, self.image_folder))
-        if background is not None:
-            if not self.tiling:
-                background = self.resize_image(background,
-                                               self.background_keep_aspect)
-            else:
-                sizey, sizex = background.shape[0], background.shape[1]
-                if sizex > self.width and sizey > self.height:
-                    background = cv2.resize(
-                        background, (self.width, self.height))
-                else:
-                    repx = (self.width - 1) // sizex + 1
-                    repy = (self.height - 1) // sizey + 1
-                    background = np.tile(background, (repy, repx, 1))
-                    background = background[0:self.height, 0:self.width]
-            background = itertools.repeat(background)
-        else:
-            background_video = cv2.VideoCapture(
+        
+        if not self.no_background:
+            background = cv2.imread(
                 findFile(self.background_image, self.image_folder))
-            if not background_video.isOpened():
-                raise RuntimeError("Couldn't open video '{}'".format(
-                    self.background_image))
-            self.bg_video_fps = background_video.get(cv2.CAP_PROP_FPS)
-            # Initiate current fps to background video fps
-            self.current_fps = self.bg_video_fps
-
-            def read_frame():
-                ret, frame = background_video.read()
-                if not ret:
-                    background_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ret, frame = background_video.read()
-                    assert ret, 'cannot read frame %r' % self.background_image
-                return self.resize_image(frame, self.background_keep_aspect)
-
-            def next_frame():
-                while True:
-                    # Number of frames we need to advance background movie,
-                    # fractional.
-                    advrate = self.bg_video_fps / self.current_fps
-                    if advrate < 1:
-                        # Number of frames<1 so to avoid movie freezing randomly
-                        # choose whether to advance by one frame with correct
-                        # probability.
-                        self.bg_video_adv_rate = 1 if np.random.uniform() < advrate else 0
+            if background is not None:
+                if not self.tiling:
+                    background = self.resize_image(background,
+                                                   self.background_keep_aspect)
+                else:
+                    sizey, sizex = background.shape[0], background.shape[1]
+                    if sizex > self.width and sizey > self.height:
+                        background = cv2.resize(
+                            background, (self.width, self.height))
                     else:
-                        # Just round to nearest number of frames when >=1.
-                        self.bg_video_adv_rate = round(advrate)
-                    for i in range(self.bg_video_adv_rate):
-                        frame = read_frame()
-                    yield frame
-            background = next_frame()
+                        repx = (self.width - 1) // sizex + 1
+                        repy = (self.height - 1) // sizey + 1
+                        background = np.tile(background, (repy, repx, 1))
+                        background = background[0:self.height, 0:self.width]
+                background = itertools.repeat(background)
+            else:
+                background_video = cv2.VideoCapture(
+                    findFile(self.background_image, self.image_folder))
+                if not background_video.isOpened():
+                    raise RuntimeError("Couldn't open video '{}'".format(
+                        self.background_image))
+                self.bg_video_fps = background_video.get(cv2.CAP_PROP_FPS)
+                # Initiate current fps to background video fps
+                self.current_fps = self.bg_video_fps
 
-        self.images["background"] = background
+                def read_frame():
+                    ret, frame = background_video.read()
+                    if not ret:
+                        background_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = background_video.read()
+                        assert ret, 'cannot read frame %r' % self.background_image
+                    return self.resize_image(frame, self.background_keep_aspect)
+
+                def next_frame():
+                    while True:
+                        # Number of frames we need to advance background movie,
+                        # fractional.
+                        advrate = self.bg_video_fps / self.current_fps
+                        if advrate < 1:
+                            # Number of frames<1 so to avoid movie freezing randomly
+                            # choose whether to advance by one frame with correct
+                            # probability.
+                            self.bg_video_adv_rate = 1 if np.random.uniform() < advrate else 0
+                        else:
+                            # Just round to nearest number of frames when >=1.
+                            self.bg_video_adv_rate = round(advrate)
+                        for i in range(self.bg_video_adv_rate):
+                            frame = read_frame()
+                        yield frame
+                background = next_frame()
+
+            self.images["background"] = background
 
         if self.use_foreground and self.foreground_image is not None:
             foreground = cv2.imread(
